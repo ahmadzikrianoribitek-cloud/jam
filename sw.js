@@ -1,13 +1,21 @@
 // Service Worker - Jam WITA
 // Ubah angka versi saat file diperbarui agar cache lama dibuang
-const CACHE = "jam-wita-v1";
+const CACHE = "jam-wita-v3";
 const ASSETS = [
   "./index_jam.html",
   "./manifest.json",
+  "./favicon.ico",
+  "./icons/icon-48.png",
+  "./icons/icon-72.png",
+  "./icons/icon-96.png",
+  "./icons/icon-144.png",
   "./icons/icon-192.png",
+  "./icons/icon-256.png",
+  "./icons/icon-384.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icons/apple-touch-icon.png",
+  "./icons/bg-kucing.jpg"
 ];
 
 self.addEventListener("install", (e) => {
