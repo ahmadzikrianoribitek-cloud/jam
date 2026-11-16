@@ -120,6 +120,8 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", function(){
       navigator.serviceWorker.register("sw.js").catch(function(){});
+      // Minta browser agar cache tidak dihapus otomatis saat ruang penyimpanan menipis
+      if (navigator.storage && navigator.storage.persist) { navigator.storage.persist().catch(function(){}); }
     });
   }
 </script>

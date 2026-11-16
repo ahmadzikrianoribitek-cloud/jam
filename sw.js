@@ -1,8 +1,10 @@
-// Service Worker - Jam WITA
+// Service Worker - Jam WITA (mode offline)
 // Ubah angka versi saat file diperbarui agar cache lama dibuang
-const CACHE = "jam-wita-v5";
+const CACHE = "jam-wita-v6";
 const ASSETS = [
   "./",
+  "./index.html",
+  "./index_jam.html",
   "./manifest.json",
   "./favicon.ico",
   "./icons/icon-48.png",
@@ -17,14 +19,19 @@ const ASSETS = [
   "./icons/apple-touch-icon.png"
 ];
 
+// Simpan semua file saat pemasangan (satu file gagal tidak membatalkan yang lain)
 self.addEventListener("install", (e) => {
-  // Satu file gagal tidak boleh menggagalkan seluruh pemasangan
   e.waitUntil(
-    caches.open(CACHE).then((c) => Promise.allSettled(ASSETS.map((a) => c.add(a))))
+    caches.open(CACHE).then((c) =>
+      Promise.allSettled(ASSETS.map((a) =>
+        fetch(a, { cache: "reload" }).then((res) => { if (res.ok) return c.put(a, res); })
+      ))
+    )
   );
   self.skipWaiting();
 });
 
+// Buang cache versi lama
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
@@ -33,32 +40,28 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Cache dulu (instan & offline), sambil memperbarui salinan di latar belakang
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET" || new URL(req.url).origin !== location.origin) return;
 
-  // Halaman: coba jaringan dulu (agar update cepat), jika offline pakai cache
-  if (req.mode === "navigate") {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
-          return res;
-        })
-        .catch(() => caches.match(req).then((hit) => hit || caches.match("./")))
-    );
-    return;
-  }
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(req, { ignoreSearch: true });
 
-  // File lain: cache dulu, lalu jaringan
-  e.respondWith(
-    caches.match(req).then((hit) =>
-      hit || fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
-        return res;
-      })
-    )
-  );
+    const refresh = fetch(req)
+      .then((res) => { if (res && res.ok) cache.put(req, res.clone()); return res; })
+      .catch(() => null);
+
+    if (hit) { e.waitUntil(refresh); return hit; }
+
+    const res = await refresh;
+    if (res) return res;
+
+    if (req.mode === "navigate") {
+      const fallback = (await cache.match("./")) || (await cache.match("./index.html")) || (await cache.match("./index_jam.html"));
+      if (fallback) return fallback;
+    }
+    return new Response("Offline", { status: 503, statusText: "Offline" });
+  })());
 });
