@@ -1,22 +1,22 @@
 // Service Worker - Jam WITA (mode offline)
 // Ubah angka versi saat file diperbarui agar cache lama dibuang
-const CACHE = "jam-wita-v6";
+const CACHE = "jam-wita-v7";
 const ASSETS = [
   "./",
   "./index.html",
   "./index_jam.html",
   "./manifest.json",
   "./favicon.ico",
-  "./icons/icon-48.png",
-  "./icons/icon-72.png",
-  "./icons/icon-96.png",
-  "./icons/icon-144.png",
-  "./icons/icon-192.png",
-  "./icons/icon-256.png",
-  "./icons/icon-384.png",
-  "./icons/icon-512.png",
-  "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icon-48.png",
+  "./icon-72.png",
+  "./icon-96.png",
+  "./icon-144.png",
+  "./icon-192.png",
+  "./icon-256.png",
+  "./icon-384.png",
+  "./icon-512.png",
+  "./icon-maskable-512.png",
+  "./apple-touch-icon.png"
 ];
 
 // Simpan semua file saat pemasangan (satu file gagal tidak membatalkan yang lain)
