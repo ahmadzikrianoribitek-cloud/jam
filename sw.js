@@ -1,8 +1,8 @@
 // Service Worker - Jam WITA
 // Ubah angka versi saat file diperbarui agar cache lama dibuang
-const CACHE = "jam-wita-v3";
+const CACHE = "jam-wita-v5";
 const ASSETS = [
-  "./index_jam.html",
+  "./",
   "./manifest.json",
   "./favicon.ico",
   "./icons/icon-48.png",
@@ -14,12 +14,14 @@ const ASSETS = [
   "./icons/icon-384.png",
   "./icons/icon-512.png",
   "./icons/icon-maskable-512.png",
-  "./icons/apple-touch-icon.png",
-  "./icons/bg-kucing.jpg"
+  "./icons/apple-touch-icon.png"
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
+  // Satu file gagal tidak boleh menggagalkan seluruh pemasangan
+  e.waitUntil(
+    caches.open(CACHE).then((c) => Promise.allSettled(ASSETS.map((a) => c.add(a))))
+  );
   self.skipWaiting();
 });
 
@@ -41,10 +43,10 @@ self.addEventListener("fetch", (e) => {
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("./index_jam.html", copy));
+          caches.open(CACHE).then((c) => c.put(req, copy));
           return res;
         })
-        .catch(() => caches.match("./index_jam.html"))
+        .catch(() => caches.match(req).then((hit) => hit || caches.match("./")))
     );
     return;
   }

@@ -3,7 +3,7 @@
   "short_name": "Jam WITA",
   "description": "Jam digital waktu Indonesia Tengah (WITA, GMT+8)",
   "lang": "id",
-  "start_url": "./index_jam.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
@@ -65,5 +65,5 @@
       "purpose": "maskable"
     }
   ],
-  "id": "./index_jam.html"
+  "id": "./"
 }
