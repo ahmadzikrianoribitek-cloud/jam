@@ -1,6 +1,6 @@
 // Service Worker - Jam WITA (mode offline)
 // Ubah angka versi saat file diperbarui agar cache lama dibuang
-const CACHE = "jam-wita-v8";
+const CACHE = "jam-wita-v9";
 const ASSETS = [
   "./",
   "./index.html",
