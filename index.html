@@ -81,6 +81,23 @@
       background: linear-gradient(90deg, rgba(0,0,0,.7) 0%, rgba(0,0,0,.35) 45%, rgba(0,0,0,0) 80%);
     }
   }
+
+  /* Monitor kecepatan internet */
+  .net { margin-top: calc(var(--w) * .07); display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--w) * .03); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .nbox {
+    border: 1px solid rgba(255,255,255,.35); border-radius: 14px;
+    background: rgba(0,0,0,.3);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    padding: calc(var(--w) * .035) 4px; box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    text-shadow: 0 2px 12px rgba(0,0,0,.75);
+  }
+  .nlbl { font-size: calc(var(--w) * .03); letter-spacing: .14em; opacity: .9; }
+  .nval { font-size: calc(var(--w) * .075); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; margin-top: calc(var(--w) * .01); }
+  .nunit { font-size: calc(var(--w) * .03); opacity: .85; letter-spacing: .08em; }
+  .dl .nlbl b { color: #5ee08a; } .ul .nlbl b { color: #f5c451; }
+  .npng { grid-column: 1 / -1; font-size: calc(var(--w) * .03); letter-spacing: .1em; opacity: .85; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+  .net.busy .nval { opacity: .55; }
+  .net.off .nval { color: #ff7b7b; }
 </style>
 </head>
 <body>
@@ -92,6 +109,11 @@
       <div class="box"><div class="num" id="ss">00</div><div class="lbl">DETIK</div></div>
     </div>
     <div class="date"><div class="day" id="day"></div><div class="full" id="full"></div></div>
+    <div class="net" id="net" title="Ketuk untuk tes ulang">
+      <div class="nbox dl"><div class="nlbl"><b>&#9660;</b> DOWNLOAD</div><div class="nval" id="dl">--</div><div class="nunit">Mbps</div></div>
+      <div class="nbox ul"><div class="nlbl"><b>&#9650;</b> UPLOAD</div><div class="nval" id="ul">--</div><div class="nunit">Mbps</div></div>
+      <div class="npng" id="png">PING -- ms</div>
+    </div>
   </div>
 <script>
   // Selalu memakai zona waktu Asia/Makassar (WITA, GMT+8), apa pun pengaturan perangkat
@@ -115,6 +137,64 @@
   }
   tick();
   setInterval(tick, 250);
+
+
+  // Monitor kecepatan internet (server uji: Cloudflare, mendukung CORS)
+  (function(){
+    var BASE = "https://speed.cloudflare.com/";
+    var INTERVAL = 60000;      // jeda antar tes (ms). Perkecil = lebih real-time, tapi lebih boros kuota
+    var DL_BYTES = 2000000;    // ukuran uji download
+    var UL_BYTES = 500000;     // ukuran uji upload
+    var net = document.getElementById("net"), elD = document.getElementById("dl"),
+        elU = document.getElementById("ul"), elP = document.getElementById("png");
+    var running = false;
+    function rnd(){ return "&r=" + Math.random().toString(36).slice(2); }
+    function fmt(v){ return v >= 100 ? v.toFixed(0) : v.toFixed(1); }
+
+    function ping(){
+      var t = performance.now();
+      return fetch(BASE + "__down?bytes=0" + rnd(), {cache:"no-store"}).then(function(r){ return r.arrayBuffer(); })
+        .then(function(){ return performance.now() - t; });
+    }
+    function download(){
+      return fetch(BASE + "__down?bytes=" + DL_BYTES + rnd(), {cache:"no-store"}).then(function(r){
+        var rd = r.body.getReader(), got = 0, t0 = 0, first = true;
+        function pump(){
+          return rd.read().then(function(x){
+            if (x.done) { var sec = (performance.now() - t0) / 1000; return sec > 0 ? got * 8 / 1e6 / sec : 0; }
+            if (first) { first = false; t0 = performance.now(); } else { got += x.value.length; }
+            return pump();
+          });
+        }
+        return pump();
+      });
+    }
+    function upload(lat){
+      var body = new Blob([new Uint8Array(UL_BYTES)]);
+      var t = performance.now();
+      return fetch(BASE + "__up", {method:"POST", body:body, cache:"no-store"}).then(function(r){ return r.arrayBuffer(); })
+        .then(function(){
+          var sec = Math.max((performance.now() - t - lat) / 1000, 0.01);
+          return UL_BYTES * 8 / 1e6 / sec;
+        });
+    }
+    function run(){
+      if (running || document.hidden) return;
+      if (!navigator.onLine) { net.className = "net off"; elD.textContent = elU.textContent = "OFF"; elP.textContent = "TIDAK ADA KONEKSI"; return; }
+      running = true; net.className = "net busy";
+      var lat = 0;
+      ping().then(function(ms){ lat = ms; elP.textContent = "PING " + Math.round(ms) + " ms"; return download(); })
+        .then(function(v){ elD.textContent = fmt(v); return upload(lat); })
+        .then(function(v){ elU.textContent = fmt(v); net.className = "net"; })
+        .catch(function(){ net.className = "net off"; elD.textContent = elU.textContent = "--"; elP.textContent = "GAGAL MENGUKUR"; })
+        .then(function(){ running = false; });
+    }
+    net.addEventListener("click", run);
+    window.addEventListener("online", run);
+    document.addEventListener("visibilitychange", function(){ if (!document.hidden) run(); });
+    run();
+    setInterval(run, INTERVAL);
+  })();
 
   // Daftarkan service worker (butuh https atau localhost)
   if ("serviceWorker" in navigator) {
