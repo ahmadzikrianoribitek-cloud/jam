@@ -82,22 +82,22 @@
     }
   }
 
-  /* Monitor kecepatan internet */
-  .net { margin-top: calc(var(--w) * .07); display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--w) * .03); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  /* Monitor kecepatan internet (realtime) */
+  .net { margin-top: calc(var(--w) * .045); display: grid; grid-template-columns: repeat(2, 1fr); gap: calc(var(--w) * .03); cursor: pointer; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
   .nbox {
     border: 1px solid rgba(255,255,255,.35); border-radius: 14px;
     background: rgba(0,0,0,.3);
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
-    padding: calc(var(--w) * .035) 4px; box-shadow: 0 8px 32px rgba(0,0,0,.35);
-    text-shadow: 0 2px 12px rgba(0,0,0,.75);
+    padding: calc(var(--w) * .028) 4px calc(var(--w) * .032); box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    text-shadow: 0 2px 12px rgba(0,0,0,.75), 0 0 3px rgba(0,0,0,.6);
   }
   .nlbl { font-size: calc(var(--w) * .03); letter-spacing: .14em; opacity: .9; }
-  .nval { font-size: calc(var(--w) * .075); font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; margin-top: calc(var(--w) * .01); }
-  .nunit { font-size: calc(var(--w) * .03); opacity: .85; letter-spacing: .08em; }
+  .nval { font-size: calc(var(--w) * .085); font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; margin-top: calc(var(--w) * .008); }
+  .nunit { font-size: calc(var(--w) * .03); font-weight: 400; opacity: .85; letter-spacing: .08em; margin-left: .25em; }
   .dl .nlbl b { color: #5ee08a; } .ul .nlbl b { color: #f5c451; }
-  .npng { grid-column: 1 / -1; font-size: calc(var(--w) * .03); letter-spacing: .1em; opacity: .85; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
-  .net.busy .nval { opacity: .55; }
+  .npng { grid-column: 1 / -1; font-size: calc(var(--w) * .028); letter-spacing: .1em; opacity: .85; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
   .net.off .nval { color: #ff7b7b; }
+  .net.pause .nval { opacity: .45; }
 </style>
 </head>
 <body>
@@ -109,9 +109,9 @@
       <div class="box"><div class="num" id="ss">00</div><div class="lbl">DETIK</div></div>
     </div>
     <div class="date"><div class="day" id="day"></div><div class="full" id="full"></div></div>
-    <div class="net" id="net" title="Ketuk untuk tes ulang">
-      <div class="nbox dl"><div class="nlbl"><b>&#9660;</b> DOWNLOAD</div><div class="nval" id="dl">--</div><div class="nunit">Mbps</div></div>
-      <div class="nbox ul"><div class="nlbl"><b>&#9650;</b> UPLOAD</div><div class="nval" id="ul">--</div><div class="nunit">Mbps</div></div>
+    <div class="net" id="net" title="Ketuk untuk jeda / lanjut">
+      <div class="nbox dl"><div class="nlbl"><b>&#9660;</b> DOWNLOAD</div><div class="nval"><span id="dl">--</span><span class="nunit">Mbps</span></div></div>
+      <div class="nbox ul"><div class="nlbl"><b>&#9650;</b> UPLOAD</div><div class="nval"><span id="ul">--</span><span class="nunit">Mbps</span></div></div>
       <div class="npng" id="png">PING -- ms</div>
     </div>
   </div>
@@ -139,61 +139,91 @@
   setInterval(tick, 250);
 
 
-  // Monitor kecepatan internet (server uji: Cloudflare, mendukung CORS)
+  // Monitor kecepatan internet REALTIME (server uji: Cloudflare, mendukung CORS)
+  // Cara kerja: download & upload berjalan terus-menerus, kecepatan dihitung dari byte yang lewat tiap 0,5 detik.
+  // PERHATIAN: ini memakai kuota besar (sebesar kecepatan internet Anda). Ketuk kotak untuk jeda / lanjut.
   (function(){
     var BASE = "https://speed.cloudflare.com/";
-    var INTERVAL = 60000;      // jeda antar tes (ms). Perkecil = lebih real-time, tapi lebih boros kuota
-    var DL_BYTES = 2000000;    // ukuran uji download
-    var UL_BYTES = 500000;     // ukuran uji upload
     var net = document.getElementById("net"), elD = document.getElementById("dl"),
         elU = document.getElementById("ul"), elP = document.getElementById("png");
-    var running = false;
+    var wantRun = true, running = false;
+    try { if (localStorage.getItem("speedPaused") === "1") wantRun = false; } catch(e){}
+
+    var dBytes = 0, uBytes = 0, tD = 0, tU = 0;          // byte periode ini & total sesi
+    var lastT = 0, smD = 0, smU = 0, pingMs = null;
+    var ctrl = null, xhr = null, timerSpeed = 0, timerPing = 0;
+    var ulBlob = new Blob([new Uint8Array(4000000)]);
     function rnd(){ return "&r=" + Math.random().toString(36).slice(2); }
     function fmt(v){ return v >= 100 ? v.toFixed(0) : v.toFixed(1); }
+    function mb(b){ return b >= 1e9 ? (b/1e9).toFixed(2) + " GB" : (b/1e6).toFixed(0) + " MB"; }
 
-    function ping(){
-      var t = performance.now();
-      return fetch(BASE + "__down?bytes=0" + rnd(), {cache:"no-store"}).then(function(r){ return r.arrayBuffer(); })
-        .then(function(){ return performance.now() - t; });
-    }
-    function download(){
-      return fetch(BASE + "__down?bytes=" + DL_BYTES + rnd(), {cache:"no-store"}).then(function(r){
-        var rd = r.body.getReader(), got = 0, t0 = 0, first = true;
+    function startDL(){
+      if (!running) return;
+      ctrl = new AbortController();
+      fetch(BASE + "__down?bytes=100000000" + rnd(), {cache:"no-store", signal: ctrl.signal}).then(function(r){
+        var rd = r.body.getReader();
         function pump(){
           return rd.read().then(function(x){
-            if (x.done) { var sec = (performance.now() - t0) / 1000; return sec > 0 ? got * 8 / 1e6 / sec : 0; }
-            if (first) { first = false; t0 = performance.now(); } else { got += x.value.length; }
+            if (x.done) { if (running) startDL(); return; }
+            dBytes += x.value.length; tD += x.value.length;
             return pump();
           });
         }
         return pump();
-      });
+      }).catch(function(){ if (running) setTimeout(startDL, 1000); });
     }
-    function upload(lat){
-      var body = new Blob([new Uint8Array(UL_BYTES)]);
+    function startUL(){
+      if (!running) return;
+      var last = 0;
+      xhr = new XMLHttpRequest();
+      xhr.open("POST", BASE + "__up" + "?" + rnd().slice(1));
+      xhr.upload.onprogress = function(e){ var d = e.loaded - last; last = e.loaded; uBytes += d; tU += d; };
+      xhr.onloadend = function(){ if (running) setTimeout(startUL, xhr.status === 200 ? 0 : 1000); };
+      xhr.send(ulBlob);
+    }
+    function doPing(){
+      if (!running) return;
       var t = performance.now();
-      return fetch(BASE + "__up", {method:"POST", body:body, cache:"no-store"}).then(function(r){ return r.arrayBuffer(); })
-        .then(function(){
-          var sec = Math.max((performance.now() - t - lat) / 1000, 0.01);
-          return UL_BYTES * 8 / 1e6 / sec;
-        });
+      fetch(BASE + "__down?bytes=0" + rnd(), {cache:"no-store"}).then(function(r){ return r.arrayBuffer(); })
+        .then(function(){ pingMs = performance.now() - t; }).catch(function(){ pingMs = null; });
     }
-    function run(){
-      if (running || document.hidden) return;
+    function render(){
+      if (!running) { return; }
+      var now = performance.now(), dt = (now - lastT) / 1000; lastT = now;
+      if (dt <= 0) return;
+      var vd = dBytes * 8 / 1e6 / dt, vu = uBytes * 8 / 1e6 / dt;
+      dBytes = 0; uBytes = 0;
+      smD = smD * .4 + vd * .6; smU = smU * .4 + vu * .6;   // sedikit diperhalus agar angka tidak melompat
       if (!navigator.onLine) { net.className = "net off"; elD.textContent = elU.textContent = "OFF"; elP.textContent = "TIDAK ADA KONEKSI"; return; }
-      running = true; net.className = "net busy";
-      var lat = 0;
-      ping().then(function(ms){ lat = ms; elP.textContent = "PING " + Math.round(ms) + " ms"; return download(); })
-        .then(function(v){ elD.textContent = fmt(v); return upload(lat); })
-        .then(function(v){ elU.textContent = fmt(v); net.className = "net"; })
-        .catch(function(){ net.className = "net off"; elD.textContent = elU.textContent = "--"; elP.textContent = "GAGAL MENGUKUR"; })
-        .then(function(){ running = false; });
+      net.className = "net";
+      elD.textContent = fmt(smD); elU.textContent = fmt(smU);
+      elP.textContent = "PING " + (pingMs == null ? "--" : Math.round(pingMs)) + " ms  \u00B7  " + mb(tD + tU) + " TERPAKAI";
     }
-    net.addEventListener("click", run);
-    window.addEventListener("online", run);
-    document.addEventListener("visibilitychange", function(){ if (!document.hidden) run(); });
-    run();
-    setInterval(run, INTERVAL);
+    function start(){
+      if (running) return;
+      running = true; dBytes = uBytes = 0; smD = smU = 0; lastT = performance.now(); net.className = "net";
+      startDL(); startUL(); doPing();
+      timerSpeed = setInterval(render, 500);
+      timerPing = setInterval(doPing, 2000);
+    }
+    function stop(label){
+      running = false;
+      clearInterval(timerSpeed); clearInterval(timerPing);
+      try { if (ctrl) ctrl.abort(); } catch(e){}
+      try { if (xhr) xhr.abort(); } catch(e){}
+      net.className = "net pause"; elD.textContent = elU.textContent = "--";
+      elP.textContent = label;
+    }
+    net.addEventListener("click", function(){
+      wantRun = !wantRun;
+      try { localStorage.setItem("speedPaused", wantRun ? "0" : "1"); } catch(e){}
+      if (wantRun) start(); else stop("DIJEDA \u00B7 KETUK UNTUK MULAI");
+    });
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden) { if (running) stop("DIJEDA"); }
+      else if (wantRun) start();
+    });
+    if (wantRun) start(); else stop("DIJEDA \u00B7 KETUK UNTUK MULAI");
   })();
 
   // Daftarkan service worker (butuh https atau localhost)
